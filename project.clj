@@ -13,9 +13,10 @@
           [ring "1.3.2"]
           [com.taoensso/timbre "3.3.1-1cd4b70" :exclusions [org.clojure/tools.reader]]
           [cheshire "5.4.0"]
-          [amazonica "0.3.18" :exclusions [com.taoensso/encore org.clojure/tools.reader]]
+          [amazonica "0.3.18" :exclusions [com.taoensso/nippy com.taoensso/encore org.clojure/tools.reader ]]
           [metrics-clojure "2.4.0"]
           [byte-streams "0.2.0-alpha8"]
+          [com.taoensso/nippy "2.7.0"]
 
   ]
   :main ^:skip-aot kinesis3.core
