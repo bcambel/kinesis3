@@ -21,4 +21,6 @@
   :main ^:skip-aot kinesis3.core
   :target-path "target/%s"
   :uberjar-name "kinesis3.jar"
-  :profiles {:uberjar {:aot :all}})
+  :profiles {:uberjar {:aot :all}
+             :dev {:plugins [[lein-midje "3.1.3"]]}
+  })

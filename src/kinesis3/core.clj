@@ -80,7 +80,7 @@
       (go (while true
         (loop [cnt 0]
           (let [buffer-size (.size temp-queue)]
-            (info (format "SIZE: %s ITER: %s " buffer-size cnt))
+            (sometimes 0.1 (format "SIZE: %s ITER: %s " buffer-size cnt))
             (update! queue-size buffer-size)
             (when (> buffer-size threshold)
               (write-to-disk temp-queue threshold s3-bucket)))
