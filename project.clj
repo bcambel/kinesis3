@@ -22,5 +22,6 @@
   :target-path "target/%s"
   :uberjar-name "kinesis3.jar"
   :profiles {:uberjar {:aot :all}
-             :dev {:plugins [[lein-midje "3.1.3"]]}
+             :dev {:plugins [[lein-midje "3.1.3"]]
+                   :dependencies [[midje "1.6.0" :exclusions [org.clojure/clojure]]]}
   })
