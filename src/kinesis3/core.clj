@@ -21,7 +21,7 @@
     [kinesis3.log                           :as log-base]
     [byte-streams                           :refer [convert print-bytes]]
     [taoensso.timbre                        :as timbre
-         :refer (log  trace  debug  info  warn  error  fatal  report)])
+         :refer (log  trace  debug  info  warn  error  fatal  report sometimes)])
   (:gen-class))
 
 (def reg (new-registry))
@@ -75,12 +75,12 @@
     (info "Starting S3Sink Component")
     (let [temp-queue (new-q)
           threshold (or threshold 100)
-          sleep-time (or sleep-time 5000)]
+          sleep-time (or sleep-time 3000)]
       ; Queue management; check size, if > threshold, send to s3
       (go (while true
         (loop [cnt 0]
           (let [buffer-size (.size temp-queue)]
-            ; (info (format "SIZE: %d ITER: %d " buffer-size cnt))
+            (info (format "SIZE: %s ITER: %s " buffer-size cnt))
             (update! queue-size buffer-size)
             (when (> buffer-size threshold)
               (write-to-disk temp-queue threshold s3-bucket)))
@@ -113,9 +113,14 @@
           (GET "/ping" request {:status  200 :body "pong" })
           (GET "/stats" request {:status 200 :headers {"Content-Type" "application/json"} 
                                              :body (generate-string { 
-                                                      :messages (rates message-ingested) 
+                                                      :events (rates message-ingested)
                                                       :s3-uploads (rates s3-uploads)
-                                                      :s3-upload-timing (timers/percentiles s3-upload-timing)
+                                                      :s3-upload-timing {:percentile (timers/percentiles s3-upload-timing)
+                                                                          :calls (timers/number-recorded s3-upload-timing)
+                                                                          :min (/ (timers/smallest s3-upload-timing) 100000) ;ms
+                                                                          :std-dev (/ (timers/std-dev s3-upload-timing) 100000) ;ms
+                                                                          :mean (/ (timers/mean s3-upload-timing) 100000) ;ms
+                                                                          }
                                                       :buffer {:percentiles (percentiles queue-size)
                                                                 :mean (mean queue-size)
                                                                 :std-dev (std-dev queue-size)
