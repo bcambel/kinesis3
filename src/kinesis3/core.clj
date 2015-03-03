@@ -46,7 +46,7 @@
   [f bucket k]
   (let [date-time (java.util.Date.)
         bucket-name (format "%s/kinesis3/%s" bucket (.format (java.text.SimpleDateFormat. "yyyy/MM/dd") date-time))
-        key-name (format "%s.records" k) ]
+        key-name (format "%s.records.gz" k) ]
     (time! s3-upload-timing
       (s3/put-object :bucket-name bucket-name
                      :key key-name
