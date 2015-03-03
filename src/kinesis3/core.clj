@@ -1,6 +1,7 @@
 (ns kinesis3.core
   (:require 
     [clojure.string                         :as s]
+    [clojure.java.io                        :as io]
     [clojure.tools.cli                      :refer [parse-opts]]
     [ring.adapter.jetty                     :refer [run-jetty]]
     [compojure.route                        :as route]
@@ -22,6 +23,7 @@
     [byte-streams                           :refer [convert print-bytes]]
     [taoensso.timbre                        :as timbre
          :refer (log  trace  debug  info  warn  error  fatal  report sometimes)])
+  (:import java.util.zip.GZIPOutputStream)
   (:gen-class))
 
 (def reg (new-registry))
@@ -53,13 +55,14 @@
 (defn write-to-disk
   [temp-queue threshold s3-bucket]
   (let [metadata (atom []) 
-        out-file (java.io.File/createTempFile "records" ".log")]
-    (with-open [wrt (clojure.java.io/writer out-file)]
+        out-file (java.io.File/createTempFile "records" ".log.gz")]
+    (with-open [wrt (-> out-file io/output-stream GZIPOutputStream.)]
       (loop [idx 0 
              first-seq nil 
              last-seq nil]
         (let [[sequence data] (.poll temp-queue)]
-          (.write wrt (format "%s %s \n" sequence data))
+          (.write wrt (.getBytes (format "%s %s \n" sequence data)))
+
           (reset! metadata [first-seq last-seq idx])
           (when (< idx threshold)
             (recur (inc idx) (if (= idx 0) sequence first-seq) sequence)))))
