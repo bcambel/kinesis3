@@ -36,6 +36,8 @@
 (def CR (console/reporter {}))
 
 (defn new-q [] (java.util.concurrent.ConcurrentLinkedDeque.))
+
+(def event-queue (new-q))
 ; (def q (dq/queues "/tmp" {}))
 
 (defn upload-to-s3
@@ -47,10 +49,14 @@
   (let [date-time (java.util.Date.)
         bucket-name (format "%s/kinesis3/%s" bucket (.format (java.text.SimpleDateFormat. "yyyy/MM/dd") date-time))
         key-name (format "%s.records.gz" k) ]
+    (info "Uploading to S3 " (.getAbsolutePath f))
+
     (time! s3-upload-timing
       (s3/put-object :bucket-name bucket-name
                      :key key-name
-                     :file f))))
+                     :file f))
+    (mark! s3-uploads)
+    ))
 
 (defn write-to-disk
   [temp-queue threshold s3-bucket]
@@ -68,39 +74,9 @@
             (recur (inc idx) (if (= idx 0) sequence first-seq) sequence)))))
     (info "Completed " out-file)
     (upload-to-s3 (.getAbsolutePath out-file) s3-bucket (s/join "-" @metadata))
-    (mark! s3-uploads)
-    ))
-
-(defrecord S3Sink [msg-chan threshold sleep-time s3-bucket aws-options]
-  component/Lifecycle
-
-  (start [this]
-    (info "Starting S3Sink Component")
-    (let [temp-queue (new-q)
-          threshold (or threshold 100)
-          sleep-time (or sleep-time 3000)]
-      ; Queue management; check size, if > threshold, send to s3
-      (go (while true
-        (loop [cnt 0]
-          (let [buffer-size (.size temp-queue)]
-            (sometimes 0.1 (format "SIZE: %s ITER: %s " buffer-size cnt))
-            (update! queue-size buffer-size)
-            (when (> buffer-size threshold)
-              (write-to-disk temp-queue threshold s3-bucket)))
-          (Thread/sleep sleep-time)
-          (rates message-ingested)
-          (recur (inc cnt)))))
-      ; listen channel, write to QUEUE
-      (go (while true
-        (let [[[topic {:keys [sequence-number data partition]}] ch] (alts! [msg-chan])]
-                (.add temp-queue [sequence-number data]))))))
-  (stop [this]
-
-    ))
     
-(defn s3sink
-  [channel s3-bucket aws-options batch-size]
-  (map->S3Sink {:msg-chan channel :s3-bucket s3-bucket :aws-options aws-options :threshold batch-size} ))
+    ))
+
 
 ;A Basic HTTP Interface for status, and management(?)
 (defrecord HTTP [port pipe listener conf server]
@@ -146,27 +122,68 @@
   [port]
   (map->HTTP {:port port}))
 
+(defn gen-temp-file []
+  (java.io.File/createTempFile "records" ".log.gz"))
+
+(defn new-compressed-stream
+  []
+  (let [temp-file (gen-temp-file)]
+    {:file temp-file 
+     :stream (-> temp-file io/output-stream GZIPOutputStream.)}))
+
+(defn event-sink 
+  [s3-bucket]
+  (let [item-counter (atom 0)
+        last-sequence (atom nil)
+        gstream (atom (new-compressed-stream))
+        check-stream-status (fn[] 
+                                  (if (> @item-counter 10)
+                                    (do 
+                                      (info "Finalizating stream.." @last-sequence)
+                                      (.close (:stream @gstream))
+                                      (upload-to-s3 (:file @gstream) s3-bucket @last-sequence)
+                                      (reset! item-counter 0)
+                                      (reset! gstream (new-compressed-stream))
+                                      true
+                                      )))
+        get-stream-writer (fn [] (:stream @gstream))
+        ]
+
+      (let [event-processor (fn[records]
+                              (info "Event processing...")
+
+                              (let [wrt (get-stream-writer)]
+                                (doseq [row records]
+                                    (let [{:keys [sequence-number data partition]} row]
+                                      
+                                      (.write wrt (.getBytes (format "%s %s \n" sequence-number data)))
+                                      (reset! last-sequence sequence-number)
+                                      (mark! message-ingested)
+                                      (swap! item-counter inc)
+                                      ))
+
+                                (info "Found record count" @item-counter)
+                                (check-stream-status)))]
+      event-processor)))
+
 (defn start-worker
-  [msg-chan app-name aws-key aws-secret aws-endpoint aws-kinesis-stream]
+  [msg-chan app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket]
   (kinesis/worker!  
     :app app-name
     :stream aws-kinesis-stream
-    :checkpoint 10
+    :checkpoint false
     :credentials {:access-key aws-key :secret-key aws-secret :endpoint aws-endpoint }
     :endpoint (format "kinesis.%s.amazonaws.com" aws-endpoint)
-    :processor (fn [records]
-                  (doseq [row records]
-                    (go (>! msg-chan ["master" row]))
-                    (mark! message-ingested)))))
+    :processor (event-sink s3-bucket)))
 
-(defrecord KinesisConsumer [pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream cons-chan channel]
+(defrecord KinesisConsumer [pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket cons-chan channel]
   component/Lifecycle
 
   (start [component]
     (try
       (warn "Starting KINESIS CONSUMER Component " aws-kinesis-stream aws-key aws-endpoint)
 
-      (start-worker pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream)
+      (start-worker pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket)
       (assoc component :channel (chan))
       (catch Throwable t 
         (do
@@ -205,8 +222,7 @@
     (defcredential aws-key aws-secret aws-endpoint)
 
     (-> (component/system-map 
-          :sink (s3sink msg-chan s3-bucket aws-options batch-size)
-          :pipe (kinesis-consumer (merge {:pipe msg-chan :app-name app-name  } aws-options))
+          :pipe (kinesis-consumer (merge {:pipe msg-chan :app-name app-name :s3-bucket s3-bucket } aws-options))
           :app (component/using 
               (http-server port)
               [:pipe]
