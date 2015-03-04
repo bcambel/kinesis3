@@ -42,10 +42,11 @@
   TODO: 
     - Retry logic
     - Auto gzipping"
-  [f bucket k]
+  [f bucket k aws-kinesis-stream]
   (let [date-time (java.util.Date.)
-        bucket-name (format "%s/kinesis3/%s" bucket (.format (java.text.SimpleDateFormat. "yyyy/MM/dd") date-time))
-        key-name (format "%s.records.gz" k) ]
+        bucket-name (format "%s/kinesis3/%s/%s" bucket aws-kinesis-stream
+                              (.format (java.text.SimpleDateFormat. "yyyy/MM/dd") date-time))
+        key-name (format "%s.records.log.gz" k) ]
     (info "Uploading to S3 " (.getAbsolutePath f))
 
     (time! s3-upload-timing
@@ -109,7 +110,7 @@
      :stream (-> temp-file io/output-stream GZIPOutputStream.)}))
 
 (defn event-sink 
-  [s3-bucket batch-size]
+  [s3-bucket batch-size aws-kinesis-stream]
   (let [item-counter (atom 0)
         last-sequence (atom nil)
         gstream (atom (new-compressed-stream))
@@ -118,7 +119,7 @@
                                 (do 
                                   (info "Finalizating stream.." @last-sequence)
                                   (.close (:stream @gstream))
-                                  (upload-to-s3 (:file @gstream) s3-bucket @last-sequence)
+                                  (upload-to-s3 (:file @gstream) s3-bucket @last-sequence aws-kinesis-stream)
                                   (reset! item-counter 0)
                                   (reset! gstream (new-compressed-stream))
                                   true)))
@@ -145,7 +146,7 @@
     :checkpoint false
     :credentials {:access-key aws-key :secret-key aws-secret :endpoint aws-endpoint }
     :endpoint (format "kinesis.%s.amazonaws.com" aws-endpoint)
-    :processor (event-sink s3-bucket batch-size)))
+    :processor (event-sink s3-bucket batch-size aws-kinesis-stream)))
 
 (defrecord KinesisConsumer [pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size cons-chan channel]
   component/Lifecycle
