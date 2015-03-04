@@ -55,30 +55,10 @@
       (s3/put-object :bucket-name bucket-name
                      :key key-name
                      :file f))
-    (mark! s3-uploads)
-    ))
-
-(defn write-to-disk
-  [temp-queue threshold s3-bucket]
-  (let [metadata (atom []) 
-        out-file (java.io.File/createTempFile "records" ".log.gz")]
-    (with-open [wrt (-> out-file io/output-stream GZIPOutputStream.)]
-      (loop [idx 0 
-             first-seq nil 
-             last-seq nil]
-        (let [[sequence data] (.poll temp-queue)]
-          (.write wrt (.getBytes (format "%s %s \n" sequence data)))
-
-          (reset! metadata [first-seq last-seq idx])
-          (when (< idx threshold)
-            (recur (inc idx) (if (= idx 0) sequence first-seq) sequence)))))
-    (info "Completed " out-file)
-    (upload-to-s3 (.getAbsolutePath out-file) s3-bucket (s/join "-" @metadata))
-    
-    ))
+    (info "Done Uploading to S3 " (.getAbsolutePath f))
+    (mark! s3-uploads)))
 
 
-;A Basic HTTP Interface for status, and management(?)
 (defrecord HTTP [port pipe listener conf server]
   component/Lifecycle
 
@@ -137,21 +117,17 @@
         last-sequence (atom nil)
         gstream (atom (new-compressed-stream))
         check-stream-status (fn[] 
-                                  (if (> @item-counter batch-size)
-                                    (do 
-                                      (info "Finalizating stream.." @last-sequence)
-                                      (.close (:stream @gstream))
-                                      (upload-to-s3 (:file @gstream) s3-bucket @last-sequence)
-                                      (reset! item-counter 0)
-                                      (reset! gstream (new-compressed-stream))
-                                      true
-                                      )))
-        get-stream-writer (fn [] (:stream @gstream))
-        ]
-
+                              (if (> @item-counter batch-size)
+                                (do 
+                                  (info "Finalizating stream.." @last-sequence)
+                                  (.close (:stream @gstream))
+                                  (upload-to-s3 (:file @gstream) s3-bucket @last-sequence)
+                                  (reset! item-counter 0)
+                                  (reset! gstream (new-compressed-stream))
+                                  true)))
+        get-stream-writer (fn [] (:stream @gstream))]
       (let [event-processor (fn[records]
                               (info "Event processing...")
-
                               (let [wrt (get-stream-writer)]
                                 (doseq [row records]
                                     (let [{:keys [sequence-number data partition]} row]
@@ -159,9 +135,7 @@
                                       (.write wrt (.getBytes (format "%s %s \n" sequence-number data)))
                                       (reset! last-sequence sequence-number)
                                       (mark! message-ingested)
-                                      (swap! item-counter inc)
-                                      ))
-
+                                      (swap! item-counter inc)))
                                 (info "Found record count" @item-counter)
                                 (check-stream-status)))]
       event-processor)))
