@@ -53,15 +53,15 @@ A built in HTTP server exists which publishes stats. Navigate to /stats to fetch
 
 ## Options
 
---port                PORT (int)
---app-name            APPLICATION NAME
---checkpoint          CHECKPOINT
---aws-key             KEY
---aws-secret          SECRET
---aws-endpoint        ENDPOINT
---aws-kinesis-stream  STREAM
---s3-bucket           BUCKET
---batch-size          SIZE (int)
+--port                PORT (int)  
+--app-name            APPLICATION NAME  
+--checkpoint          CHECKPOINT  
+--aws-key             KEY  
+--aws-secret          SECRET  
+--aws-endpoint        ENDPOINT  
+--aws-kinesis-stream  STREAM  
+--s3-bucket           BUCKET  
+--batch-size          SIZE (int)  
 
 
 

@@ -132,12 +132,12 @@
      :stream (-> temp-file io/output-stream GZIPOutputStream.)}))
 
 (defn event-sink 
-  [s3-bucket]
+  [s3-bucket batch-size]
   (let [item-counter (atom 0)
         last-sequence (atom nil)
         gstream (atom (new-compressed-stream))
         check-stream-status (fn[] 
-                                  (if (> @item-counter 10)
+                                  (if (> @item-counter batch-size)
                                     (do 
                                       (info "Finalizating stream.." @last-sequence)
                                       (.close (:stream @gstream))
@@ -167,23 +167,23 @@
       event-processor)))
 
 (defn start-worker
-  [msg-chan app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket]
+  [msg-chan app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size]
   (kinesis/worker!  
     :app app-name
     :stream aws-kinesis-stream
     :checkpoint false
     :credentials {:access-key aws-key :secret-key aws-secret :endpoint aws-endpoint }
     :endpoint (format "kinesis.%s.amazonaws.com" aws-endpoint)
-    :processor (event-sink s3-bucket)))
+    :processor (event-sink s3-bucket batch-size)))
 
-(defrecord KinesisConsumer [pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket cons-chan channel]
+(defrecord KinesisConsumer [pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size cons-chan channel]
   component/Lifecycle
 
   (start [component]
     (try
       (warn "Starting KINESIS CONSUMER Component " aws-kinesis-stream aws-key aws-endpoint)
 
-      (start-worker pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket)
+      (start-worker pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size)
       (assoc component :channel (chan))
       (catch Throwable t 
         (do
@@ -222,7 +222,7 @@
     (defcredential aws-key aws-secret aws-endpoint)
 
     (-> (component/system-map 
-          :pipe (kinesis-consumer (merge {:pipe msg-chan :app-name app-name :s3-bucket s3-bucket } aws-options))
+          :pipe (kinesis-consumer (merge {:pipe msg-chan :app-name app-name :s3-bucket s3-bucket :batch-size batch-size } aws-options))
           :app (component/using 
               (http-server port)
               [:pipe]
