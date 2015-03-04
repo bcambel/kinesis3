@@ -37,9 +37,6 @@
 
 (defn new-q [] (java.util.concurrent.ConcurrentLinkedDeque.))
 
-(def event-queue (new-q))
-; (def q (dq/queues "/tmp" {}))
-
 (defn upload-to-s3
   "Upload given file to the bucket.
   TODO: 
