@@ -1,10 +1,9 @@
 (ns kinesis3.log
-  (:require 
-    [clojure.string :as str]
-    [taoensso.timbre :refer :all]
-    ))
+  (:require
+   [clojure.string :as str]
+   [taoensso.timbre :refer :all]))
 
-(def ip-address  (.getHostAddress (java.net.InetAddress/getLocalHost)))
+(defn ip-address [] (.getHostAddress (java.net.InetAddress/getLocalHost)))
 
 (defn fmt-output-fn
   [{:keys [level throwable message timestamp hostname ns]}
@@ -12,42 +11,42 @@
    & [{:keys [nofonts?] :as appender-fmt-output-opts}]]
   ;; <timestamp> <hostname> <LEVEL> [<ns>] - <message> <throwable>
   (format "[KINESIS3]%s %s %s [%s] - %s%s"
-    timestamp ip-address (-> level name str/upper-case) ns (or message "")
-    (or (stacktrace throwable "\n" (when nofonts? {})) "")))
+          timestamp (ip-address) (-> level name str/upper-case) ns (or message "")
+          (or (stacktrace throwable "\n" (when nofonts? {})) "")))
 
 (def log-config
   "APPENDERS
-     An appender is a map with keys:
-      :doc             ; (Optional) string.
-      :min-level       ; (Optional) keyword, or nil (no minimum level).
-      :enabled?        ; (Optional).
-      :async?          ; (Optional) dispatch using agent (good for slow appenders).
-      :rate-limit      ; (Optional) [ncalls-limit window-ms].
-      :fmt-output-opts ; (Optional) extra opts passed to `fmt-output-fn`.
-      :fn              ; (fn [appender-args-map]), with keys described below.
-      :args-hash-fn    ; Experimental. Used by rate-limiter, etc.
-     An appender's fn takes a single map with keys:
-      :level         ; Keyword.
-      :error?        ; Is level an 'error' level?
-      :throwable     ; java.lang.Throwable.
-      :args          ; Raw logging macro args (as given to `info`, etc.).
-      :message       ; Stringified logging macro args, or nil.
-      :output        ; Output of `fmt-output-fn`, used by built-in appenders
-                     ; as final, formatted appender output. Appenders may (but
-                     ; are not obligated to) use this as their output.
-      :ap-config     ; Content of config's :shared-appender-config key.
-      :profile-stats ; From `profile` macro.
-      :instant       ; java.util.Date.
-      :timestamp     ; String generated from :timestamp-pattern, :timestamp-locale.
-      :hostname      ; String.
-      :ns            ; String.
-      ;; Waiting on http://dev.clojure.org/jira/browse/CLJ-865:
-      :file          ; String.
-      :line          ; Integer.
-   MIDDLEWARE
-     Middleware are fns (applied right-to-left) that transform the map
-     dispatched to appender fns. If any middleware returns nil, no dispatching
-     will occur (i.e. the event will be filtered).
+  An appender is a map with keys:
+  :doc             ; (Optional) string.
+  :min-level       ; (Optional) keyword, or nil (no minimum level).
+  :enabled?        ; (Optional).
+  :async?          ; (Optional) dispatch using agent (good for slow appenders).
+  :rate-limit      ; (Optional) [ncalls-limit window-ms].
+  :fmt-output-opts ; (Optional) extra opts passed to `fmt-output-fn`.
+  :fn              ; (fn [appender-args-map]), with keys described below.
+  :args-hash-fn    ; Experimental. Used by rate-limiter, etc.
+  An appender's fn takes a single map with keys:
+  :level         ; Keyword.
+  :error?        ; Is level an 'error' level?
+  :throwable     ; java.lang.Throwable.
+  :args          ; Raw logging macro args (as given to `info`, etc.).
+  :message       ; Stringified logging macro args, or nil.
+  :output        ; Output of `fmt-output-fn`, used by built-in appenders
+  ; as final, formatted appender output. Appenders may (but
+  ; are not obligated to) use this as their output.
+  :ap-config     ; Content of config's :shared-appender-config key.
+  :profile-stats ; From `profile` macro.
+  :instant       ; java.util.Date.
+  :timestamp     ; String generated from :timestamp-pattern, :timestamp-locale.
+  :hostname      ; String.
+  :ns            ; String.
+  ;; Waiting on http://dev.clojure.org/jira/browse/CLJ-865:
+  :file          ; String.
+  :line          ; Integer.
+  MIDDLEWARE
+  Middleware are fns (applied right-to-left) that transform the map
+  dispatched to appender fns. If any middleware returns nil, no dispatching
+  will occur (i.e. the event will be filtered).
   The `example-config` code contains further settings and details.
   See also `set-config!`, `merge-config!`, `set-level!`."
 
