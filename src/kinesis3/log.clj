@@ -3,7 +3,7 @@
    [clojure.string :as str]
    [taoensso.timbre :refer :all]))
 
-(defn ip-address [] (.getHostAddress (java.net.InetAddress/getLocalHost)))
+(defn ip-address [] "")
 
 (defn fmt-output-fn
   [{:keys [level throwable message timestamp hostname ns]}
