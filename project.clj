@@ -1,4 +1,4 @@
-(defproject kinesis3 "0.1.1"
+(defproject kinesis3 "0.1.2"
   :description "Save Amazon Kinesis streams to S3"
   :url "http://github.com/bcambel/kinesis3"
   :license {:name "Eclipse Public License"
