@@ -57,7 +57,7 @@
     (mark! s3-uploads)))
 
 
-(defrecord HTTP [port pipe listener conf server]
+(defrecord HTTP [port listener conf server]
   component/Lifecycle
 
   (start [this]
@@ -96,10 +96,6 @@
   (stop [this]
     (.stop server)))
 
-(defn http-server
-  [port]
-  (map->HTTP {:port port}))
-
 (defn gen-temp-file []
   (java.io.File/createTempFile "records" ".log.gz"))
 
@@ -132,16 +128,14 @@
                               (if (time-to-save? batch-size @item-counter @last-write interval )
                                 (do
                                   (info "Finalizating stream.." @item-counter @last-sequence )
-                                  (.close (:stream @gstream))
+                                  (.close ^GZIPOutputStream (:stream @gstream))
                                   (try
                                     (upload-to-s3 (:file @gstream) s3-bucket @last-sequence aws-kinesis-stream)
                                     (catch Throwable t
                                       (do
-                                        (error t)
+                                        (error t "Error while writing to S3")
                                         (warn (format "Exception while S3 write. Exiting app for safety. SeqId:%s" @last-sequence))
-                                        (System/exit 1)
-                                        )))
-
+                                        (System/exit 2))))
                                   (reset! item-counter 0)
                                   (reset! gstream (new-compressed-stream))
                                   (reset! last-write (epoch))
@@ -152,8 +146,12 @@
                               (let [wrt (get-stream-writer)]
                                 (doseq [row records]
                                     (let [{:keys [sequence-number data partition]} row]
-
-                                      (.write wrt (.getBytes (format "%s %s \n" sequence-number data)))
+                                      (try
+                                        (.write ^GZIPOutputStream wrt (.getBytes (format "%s %s \n" sequence-number data)))
+                                        (catch java.io.IOException exc
+                                          (do
+                                            (error exc "Errored while trying to write to stream")
+                                            (System/exit 2))))
                                       (reset! last-sequence sequence-number)
                                       (mark! message-ingested)
                                       (swap! item-counter inc)))
@@ -162,7 +160,7 @@
       event-processor)))
 
 (defn start-worker
-  [msg-chan app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size interval]
+  [app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size interval]
   (kinesis/worker!
     :app app-name
     :stream aws-kinesis-stream
@@ -171,14 +169,16 @@
     :endpoint (format "kinesis.%s.amazonaws.com" aws-endpoint)
     :processor (event-sink s3-bucket batch-size aws-kinesis-stream interval)))
 
-(defrecord KinesisConsumer [pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size interval cons-chan channel]
+(defrecord KinesisConsumer [app-name aws-key aws-secret aws-endpoint aws-kinesis-stream
+                            s3-bucket batch-size interval cons-chan channel]
   component/Lifecycle
 
   (start [component]
     (try
       (warn "Starting KINESIS CONSUMER Component " aws-kinesis-stream aws-key aws-endpoint)
 
-      (start-worker pipe app-name aws-key aws-secret aws-endpoint aws-kinesis-stream s3-bucket batch-size interval)
+      (start-worker app-name aws-key aws-secret aws-endpoint
+                    aws-kinesis-stream s3-bucket batch-size interval)
       (assoc component :channel (chan))
       (catch Throwable t
         (do
@@ -186,45 +186,41 @@
         (error t)
         )))))
 
-(defn kinesis-consumer
-  "Returns a new kinesis producer with the given options"
-  [options]
-  (map->KinesisConsumer options))
-
 (def cli-options
   [["-p" "--port PORT" "Port number"
     :default 8888
     :parse-fn #(Integer/parseInt %)
     :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
-    ["-a" "--app-name NAME" "Application name to use for Kinesis Stream" :default "kinesis-sample-consumer0"]
-    ["-c" "--checkpoint CHECKPOINT" "Checkpoint where the application left" :validate [false "Checkpoint not implemented yet!"]] ; TODO
-    [nil "--aws-key KEY" "AWS KEY" ]
-    [nil "--aws-secret SECRET" "AWS SECRET" ]
+    ["-a" "--app-name NAME" "Application name to use for Kinesis Stream"
+      :default "kinesis-sample-consumer0"]
+    ["-c" "--checkpoint CHECKPOINT" "Checkpoint where the application left"
+      :validate [false "Checkpoint not implemented yet!"]] ; TODO
+    [nil "--aws-key KEY" "AWS KEY"]
+    [nil "--aws-secret SECRET" "AWS SECRET"]
     [nil "--aws-endpoint ENDPOINT" "AWS ENDPOINT to use" :default "eu-west-1"]
-    [nil "--aws-kinesis-stream STREAM" "AWS Kinesis Stream name" ]
-    ["-s" "--s3-bucket BUCKET" "S3 Bucket to output" :parse-fn str :validate [#(> (count %) 0) "S3 Bucket must be supplied"] ]
+    [nil "--aws-kinesis-stream STREAM" "AWS Kinesis Stream name"]
+    ["-s" "--s3-bucket BUCKET" "S3 Bucket to output" :parse-fn str
+      :validate [#(> (count %) 0) "S3 Bucket must be supplied"]]
     ["-b"  "--batch-size SIZE" :default (int 1e6) :parse-fn #(Integer/parseInt %)]
-    ["-i" "--interval SECONDS" "Seconds between checkpoints" :default 180 :parse-fn #(Integer/parseInt %)]
+    ["-i" "--interval SECONDS" "Seconds between checkpoints"
+      :default 180 :parse-fn #(Integer/parseInt %)]
     ["-h" "--help"]
     ])
 
 
 (defn app-system
   [options]
-  (let [{:keys [port aws-key aws-secret aws-endpoint aws-kinesis-stream pipe s3-bucket app-name batch-size interval]} options
-      msg-chan (chan 65535)
+  (let [{:keys [port aws-key aws-secret aws-endpoint aws-kinesis-stream pipe
+                s3-bucket app-name batch-size interval]} options
       aws-options (select-keys options [:aws-key :aws-secret :aws-endpoint :aws-kinesis-stream])]
 
     (defcredential aws-key aws-secret aws-endpoint)
 
     (-> (component/system-map
-          :pipe (kinesis-consumer (merge {:pipe msg-chan :app-name app-name :s3-bucket s3-bucket
+          :pipe (map->KinesisConsumer (merge {:app-name app-name :s3-bucket s3-bucket
                                           :batch-size batch-size :interval interval }
                                           aws-options))
-          :app (component/using
-              (http-server port)
-              [:pipe]
-            )))))
+          :app (map->HTTP {:port port})))))
 
 (defn -main
   [& args]
