@@ -133,7 +133,15 @@
                                 (do
                                   (info "Finalizating stream.." @item-counter @last-sequence )
                                   (.close (:stream @gstream))
-                                  (upload-to-s3 (:file @gstream) s3-bucket @last-sequence aws-kinesis-stream)
+                                  (try
+                                    (upload-to-s3 (:file @gstream) s3-bucket @last-sequence aws-kinesis-stream)
+                                    (catch Throwable t
+                                      (do
+                                        (error t)
+                                        (warn (format "Exception while S3 write. Exiting app for safety. SeqId:%s" @last-sequence))
+                                        (System/exit 1)
+                                        )))
+
                                   (reset! item-counter 0)
                                   (reset! gstream (new-compressed-stream))
                                   (reset! last-write (epoch))

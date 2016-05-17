@@ -22,5 +22,6 @@
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}
              :dev {:plugins [[lein-midje "3.1.3"]]
+                    :source-paths ["dev"]
                    :dependencies [[midje "1.6.0" :exclusions [org.clojure/clojure]]]}
   })
