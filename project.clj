@@ -1,4 +1,4 @@
-(defproject kinesis3 "0.1.2"
+(defproject kinesis3 "0.1.3-SNAPSHOT"
   :description "Save Amazon Kinesis streams to S3"
   :url "http://github.com/bcambel/kinesis3"
   :license {:name "Eclipse Public License"
@@ -15,6 +15,10 @@
           [amazonica "0.3.57"]
           [metrics-clojure "2.4.0"]
           [byte-streams "0.2.0"]
+
+          [org.clojure/java.jdbc "0.4.2"]
+          [honeysql "0.6.2"]
+          [org.postgresql/postgresql "9.4-1205-jdbc41"]
           ; [com.taoensso/nippy "2.7.0"]
           ]
 

@@ -64,6 +64,14 @@ A built in HTTP server exists which publishes stats. Navigate to /stats to fetch
 --batch-size          SIZE (int)
 
 
+```
+CREATE TABLE events (id CHARACTER VARYING(1024) NOT NULL,
+ts TIMESTAMP(6) WITH TIME ZONE,
+received_at TIMESTAMP(6) WITH TIME ZONE,
+title TEXT, url TEXT, path TEXT, referrer TEXT, utm_source TEXT, utm_campaign TEXT, utm_medium TEXT, utm_content TEXT, utm_term TEXT, args JSON, cookies JSON, form JSON, user_data JSON, user_id TEXT, ip CHARACTER VARYING(50), orig_data JSON, user_agent TEXT, PRIMARY KEY (id));
+
+```
+
 
 ## License
 

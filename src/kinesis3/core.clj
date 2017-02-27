@@ -21,6 +21,7 @@
     [metrics.reporters.jmx                  :as jmx]
     [kinesis3.log                           :as log-base]
     [byte-streams                           :refer [convert print-bytes]]
+    [kinesis3.db                            :as db]
     [taoensso.timbre                        :as timbre
          :refer (log trace debug info warn error fatal report sometimes)])
   (:import java.util.zip.GZIPOutputStream)
@@ -147,6 +148,8 @@
                                 (doseq [row records]
                                     (let [{:keys [sequence-number data partition]} row]
                                       (try
+                                        (info data)
+                                        (db/insert-data sequence-number data)
                                         (.write ^GZIPOutputStream wrt (.getBytes (format "%s %s \n" sequence-number data)))
                                         (catch java.io.IOException exc
                                           (do
@@ -188,7 +191,7 @@
 
 (def cli-options
   [["-p" "--port PORT" "Port number"
-    :default 8888
+    :default 8989
     :parse-fn #(Integer/parseInt %)
     :validate [#(< 0 % 0x10000) "Must be a number between 0 and 65536"]]
     ["-a" "--app-name NAME" "Application name to use for Kinesis Stream"
