@@ -56,11 +56,10 @@ component/Lifecycle
   `(try
     ~@body
     (catch org.postgresql.util.PSQLException psqlex#
-      (log/warn (.getSQLState psqlex#) (.getMessage psqlex#))
-    )
-  (catch Throwable t#
-    (do (log/warn (.getMessage t#))
-      nil))))
+      (log/warn (.getSQLState psqlex#) (.getMessage psqlex#)))
+    (catch Throwable t#
+      (do (log/warn (.getMessage t#))
+        nil))))
 
 (defn query!
 [db q]
@@ -87,12 +86,20 @@ component/Lifecycle
 
 (defmethod purify :delete
  [m dataset]
- (throw (java.lang.UnsupportedOperationException. "Purify Delete not Implemented")))
+ (let [ids (set (map #(get % :id) dataset))]
+  ; (jdbc/delete! pg-db :events ["id IN ?" ids])
+  (jdbc/execute! pg-db
+    (-> (delete-from :events)
+        (where [:in :id ids])
+        (sql/build)
+        (sql/format :quoting :ansi)
+        ))
+ ))
 
 
 (defmethod purify :diff
  [m dataset]
- (let [ids (set (map #(get % "id") dataset))
+ (let [ids (set (map #(get % :id) dataset))
        existing-ids (set (or (find-ids ids) []))
        new-ids (clojure.set/difference ids existing-ids)]
      (log/warn "New IDS: " (count new-ids) (vec (take 3 new-ids)))
@@ -106,7 +113,10 @@ component/Lifecycle
 (defn flush-events!
   [dataset]
   (when-not (empty? dataset)
-    (let [dataset* (purify :diff dataset)]
+    (let [dataset** (purify :diff dataset)
+          _ (purify :delete dataset)
+          dataset* dataset
+          ]
       (try
           (when-not (empty? dataset*)
             (apply (partial jdbc/insert! pg-db :events) dataset*))
@@ -144,6 +154,7 @@ component/Lifecycle
         cookie-data (parse-cookies Cookie)
         ]
         (println request)
+
   (flush-events! [{:id sid :received_at (pg-dt (epoch->datetime epoch))
                    :ts (pg-dt (epoch->datetime (str t))) :path path :url url
                    :user_data (pg-json (generate-string user))
@@ -152,6 +163,11 @@ component/Lifecycle
                    :ip X-Forward-For
                    :args (pg-json (generate-string args))
                    :form (pg-json (generate-string form))
+                   :utm_source (get args :utm_source)
+                   :utm_medium (get args :utm_medium)
+                   :utm_campaign (get args :utm_campaign)
+                   :utm_content (get args :utm_content)
+                   :utm_term (get args :utm_term)
                    :user_agent User-Agent
                    :orig_data (-> data generate-string pg-json)}])
   ))
